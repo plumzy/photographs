@@ -236,8 +236,17 @@ async function importFromLiveGooglePhotos(event) {
   }
 }
 
+function loadCloudflareStorageConnector() {
+  if (document.querySelector('script[src="./web/cloudflare-storage.js"]')) return;
+  const script = document.createElement("script");
+  script.src = "./web/cloudflare-storage.js";
+  script.defer = true;
+  document.body.appendChild(script);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const button = byId("connectGoogle");
+  loadCloudflareStorageConnector();
   if (!button) return;
   button.textContent = "Import from Google Photos";
   loadLiveGoogleIdentity().catch(() => {
