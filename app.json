@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Lavender Memories",
+    "slug": "lavender-memories",
+    "scheme": "lavendermemories",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F8F1FF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anniversary.lavendermemories"
+    },
+    "android": {
+      "package": "com.anniversary.lavendermemories"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose memories to add to your anniversary app."
+        }
+      ]
+    ]
+  }
+}

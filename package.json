@@ -1,0 +1,38 @@
+{
+  "name": "anniversary-memory-app",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "static": "node -e \"console.log('Open index.html in a browser, or serve this folder with any static host.')\"",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "latest",
+    "expo": "~55.0.0",
+    "expo-blur": "latest",
+    "expo-file-system": "latest",
+    "expo-image": "latest",
+    "expo-image-manipulator": "latest",
+    "expo-image-picker": "latest",
+    "expo-linear-gradient": "latest",
+    "expo-router": "latest",
+    "expo-status-bar": "latest",
+    "react": "19.2.0",
+    "react-native": "0.83.0",
+    "react-native-gesture-handler": "latest",
+    "react-native-reanimated": "latest",
+    "react-native-safe-area-context": "latest",
+    "react-native-screens": "latest",
+    "react-native-svg": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "typescript": "latest"
+  }
+}
