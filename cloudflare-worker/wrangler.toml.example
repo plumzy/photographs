@@ -1,0 +1,17 @@
+name = "lavender-memories-storage"
+main = "src/index.js"
+compatibility_date = "2026-04-20"
+
+# Bind this to the R2 bucket you create in Cloudflare.
+[[r2_buckets]]
+binding = "MEMORIES_BUCKET"
+bucket_name = "lavender-memories"
+
+[vars]
+ALLOWED_ORIGIN = "https://plumzy.github.io"
+# Set this in the Cloudflare dashboard or wrangler secret instead of committing a real value.
+# SYNC_KEY = "choose-a-private-sync-key"
+# Optional. If you make the bucket public or use a custom R2 domain, set this to that base URL.
+# PUBLIC_R2_BASE_URL = "https://media.example.com"
+# Optional. Set to "true" only if Worker-served image reads should be public.
+# PUBLIC_READ = "false"
