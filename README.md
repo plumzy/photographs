@@ -23,9 +23,9 @@ The GitHub Pages app cannot safely store Cloudflare R2 access keys in browser co
 
 ### Cloudflare setup
 
-1. In Cloudflare, create an R2 bucket named `lavender-memories`.
+1. In Cloudflare, use your R2 bucket named `photographs`.
 2. Create a Worker and use the code in `cloudflare-worker/src/index.js`.
-3. Bind the R2 bucket to the Worker with variable name `MEMORIES_BUCKET`.
+3. Bind the `photographs` R2 bucket to the Worker with variable name `MEMORIES_BUCKET`.
 4. Add Worker variables:
    - `ALLOWED_ORIGIN=https://plumzy.github.io`
    - `SYNC_KEY=<choose a private sync key>`
