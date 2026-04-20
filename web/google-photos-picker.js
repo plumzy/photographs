@@ -176,17 +176,21 @@ async function importFromLiveGooglePhotos(event) {
 
   if (!importTargetFolderId) return;
   const status = byId("importStatus");
-  const pickerWindow = window.open("about:blank", "lavenderGooglePhotosPicker", "popup,width=980,height=760");
 
   try {
     status.textContent = "Connecting to Google Photos...";
     const token = await getLiveGooglePhotosToken();
+    status.textContent = "Creating Google Photos picker...";
     const session = await createLivePickingSession(token);
     const pickerUrl = `${session.pickerUri}/autoclose`;
-    if (pickerWindow) pickerWindow.location.href = pickerUrl;
-    else window.open(pickerUrl, "_blank", "noopener,noreferrer");
+    const pickerWindow = window.open(pickerUrl, "lavenderGooglePhotosPicker", "popup,width=980,height=760");
 
-    status.textContent = "Choose photos in Google Photos, then return here.";
+    if (!pickerWindow) {
+      status.innerHTML = `<a class="primary-button" href="${pickerUrl}" target="_blank" rel="noopener">Open Google Photos Picker</a>`;
+    } else {
+      status.textContent = "Choose photos in Google Photos, then return here.";
+    }
+
     const completed = await pollLivePickingSession(session, token);
     const pickedItems = await listLivePickedItems(completed.id, token);
     const photos = pickedItems.filter((item) => {
@@ -228,7 +232,6 @@ async function importFromLiveGooglePhotos(event) {
     status.textContent = `${photos.length} Google Photos ${photos.length === 1 ? "memory was" : "memories were"} compressed and imported.`;
     commit();
   } catch (error) {
-    if (pickerWindow && !pickerWindow.closed) pickerWindow.close();
     status.textContent = error instanceof Error ? error.message : "Google Photos import failed.";
   }
 }
@@ -237,5 +240,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const button = byId("connectGoogle");
   if (!button) return;
   button.textContent = "Import from Google Photos";
+  loadLiveGoogleIdentity().catch(() => {
+    byId("importStatus").textContent = "Google sign-in could not preload. Refresh and try again.";
+  });
   button.addEventListener("click", importFromLiveGooglePhotos, { capture: true });
 });
