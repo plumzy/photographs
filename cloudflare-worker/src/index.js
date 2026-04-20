@@ -32,9 +32,7 @@ function safeSegment(value) {
 
 function decodeDataUrl(dataUrl) {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/.exec(String(dataUrl || ""));
-  if (!match) {
-    throw new Error("Expected a valid data URL.");
-  }
+  if (!match) throw new Error("Expected a valid data URL.");
 
   const contentType = match[1] || "application/octet-stream";
   const encoded = match[3] || "";
@@ -48,23 +46,37 @@ function decodeDataUrl(dataUrl) {
   return { contentType, bytes };
 }
 
-function getPublicUrl(request, env, key) {
+function getMediaUrl(request, env, key) {
   const publicBase = String(env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
   if (publicBase) return `${publicBase}/${key}`;
-  if (env.PUBLIC_READ === "true") {
-    return `${new URL(request.url).origin}/media/${encodeURIComponent(key)}`;
-  }
+  if (env.PUBLIC_READ === "true") return `${new URL(request.url).origin}/media/${key}`;
   return null;
 }
 
-async function handleMediaUpload(request, env, cors) {
-  if (!env.MEMORIES_BUCKET) {
-    return jsonResponse({ error: "Missing MEMORIES_BUCKET R2 binding." }, 500, cors);
-  }
+function portableMediaFromBody(media) {
+  return {
+    id: media.id,
+    uri: media.uri,
+    thumbnailUri: media.thumbnailUri || media.uri,
+    folderId: media.folderId,
+    type: media.type || "image",
+    createdAt: media.createdAt || new Date().toISOString(),
+    caption: media.caption || "",
+    captionAuthor: media.captionAuthor || undefined,
+    captionEditedAt: media.captionEditedAt || undefined,
+    isFavorite: Boolean(media.isFavorite),
+    width: media.width || 1400,
+    height: media.height || 1800,
+    source: media.source || "cloudflare-r2",
+    metadata: media.metadata || {},
+    includedInCarousel: Boolean(media.includedInCarousel),
+    carouselOrder: media.carouselOrder || 0
+  };
+}
 
-  if (!requireSyncKey(request, env)) {
-    return jsonResponse({ error: "Unauthorized Cloudflare sync key." }, 401, cors);
-  }
+async function handleMediaUpload(request, env, cors) {
+  if (!env.MEMORIES_BUCKET) return jsonResponse({ error: "Missing MEMORIES_BUCKET R2 binding." }, 500, cors);
+  if (!requireSyncKey(request, env)) return jsonResponse({ error: "Unauthorized Cloudflare sync key." }, 401, cors);
 
   const body = await request.json();
   const { mediaId, folderId, kind, dataUrl, metadata = {} } = body;
@@ -97,24 +109,68 @@ async function handleMediaUpload(request, env, cors) {
     }
   });
 
-  return jsonResponse({
-    ok: true,
-    key,
-    url: getPublicUrl(request, env, key)
-  }, 200, cors);
+  return jsonResponse({ ok: true, key, url: getMediaUrl(request, env, key) }, 200, cors);
+}
+
+async function handleLibraryUpsert(request, env, cors) {
+  if (!env.MEMORIES_BUCKET) return jsonResponse({ error: "Missing MEMORIES_BUCKET R2 binding." }, 500, cors);
+  if (!requireSyncKey(request, env)) return jsonResponse({ error: "Unauthorized Cloudflare sync key." }, 401, cors);
+
+  const body = await request.json();
+  const media = portableMediaFromBody(body.media || {});
+
+  if (!media.id || !media.folderId || !media.uri) {
+    return jsonResponse({ error: "media.id, media.folderId, and media.uri are required." }, 400, cors);
+  }
+
+  const key = `library/media/${safeSegment(media.id)}.json`;
+  await env.MEMORIES_BUCKET.put(key, JSON.stringify(media), {
+    httpMetadata: {
+      contentType: "application/json; charset=utf-8",
+      cacheControl: "no-store"
+    },
+    customMetadata: {
+      mediaId: String(media.id),
+      folderId: String(media.folderId),
+      updatedAt: new Date().toISOString()
+    }
+  });
+
+  return jsonResponse({ ok: true, key, media }, 200, cors);
+}
+
+async function handleLibraryRead(request, env, cors) {
+  if (!env.MEMORIES_BUCKET) return jsonResponse({ error: "Missing MEMORIES_BUCKET R2 binding." }, 500, cors);
+  if (!requireSyncKey(request, env)) return jsonResponse({ error: "Unauthorized Cloudflare sync key." }, 401, cors);
+
+  const media = [];
+  let cursor;
+
+  do {
+    const listed = await env.MEMORIES_BUCKET.list({ prefix: "library/media/", cursor });
+    for (const item of listed.objects) {
+      const object = await env.MEMORIES_BUCKET.get(item.key);
+      if (!object) continue;
+      try {
+        media.push(JSON.parse(await object.text()));
+      } catch {
+        // Ignore malformed records so one bad object does not block the library.
+      }
+    }
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+
+  media.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  return jsonResponse({ ok: true, media }, 200, cors);
 }
 
 async function handleMediaRead(request, env, cors) {
-  if (env.PUBLIC_READ !== "true") {
-    return jsonResponse({ error: "Public media reads are disabled." }, 403, cors);
-  }
+  if (env.PUBLIC_READ !== "true") return jsonResponse({ error: "Public media reads are disabled." }, 403, cors);
 
   const key = decodeURIComponent(new URL(request.url).pathname.slice("/media/".length));
   const object = await env.MEMORIES_BUCKET.get(key);
 
-  if (!object) {
-    return jsonResponse({ error: "Media object not found." }, 404, cors);
-  }
+  if (!object) return jsonResponse({ error: "Media object not found." }, 404, cors);
 
   return new Response(object.body, {
     headers: {
@@ -130,21 +186,12 @@ export default {
     const cors = corsHeaders(request, env);
     const url = new URL(request.url);
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors });
-    }
-
-    if (url.pathname === "/health" && request.method === "GET") {
-      return jsonResponse({ ok: true, service: "lavender-memories-r2" }, 200, cors);
-    }
-
-    if (url.pathname === "/media" && request.method === "POST") {
-      return handleMediaUpload(request, env, cors);
-    }
-
-    if (url.pathname.startsWith("/media/") && request.method === "GET") {
-      return handleMediaRead(request, env, cors);
-    }
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+    if (url.pathname === "/health" && request.method === "GET") return jsonResponse({ ok: true, service: "lavender-memories-r2" }, 200, cors);
+    if (url.pathname === "/media" && request.method === "POST") return handleMediaUpload(request, env, cors);
+    if (url.pathname === "/library/media" && request.method === "POST") return handleLibraryUpsert(request, env, cors);
+    if (url.pathname === "/library" && request.method === "GET") return handleLibraryRead(request, env, cors);
+    if (url.pathname.startsWith("/media/") && request.method === "GET") return handleMediaRead(request, env, cors);
 
     return jsonResponse({ error: "Not found." }, 404, cors);
   }
