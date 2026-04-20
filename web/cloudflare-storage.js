@@ -26,6 +26,18 @@ function cleanCloudflareEndpoint(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
+function cloudflareHeaders(config) {
+  return {
+    "Content-Type": "application/json",
+    ...(config.syncKey ? { "X-Lavender-Sync-Key": config.syncKey } : {})
+  };
+}
+
+function cloudflareMediaUrl(config, key) {
+  if (!key) return "";
+  return `${cleanCloudflareEndpoint(config.endpoint)}/media/${key}`;
+}
+
 function isCloudflareReady() {
   const config = getCloudflareConfig();
   return Boolean(cleanCloudflareEndpoint(config.endpoint));
@@ -51,15 +63,8 @@ function installCloudflareStyles() {
       box-shadow: 0 18px 45px rgba(124, 71, 180, 0.14);
     }
 
-    .cloudflare-form {
-      display: grid;
-      gap: 12px;
-    }
-
-    .cloudflare-input-row {
-      display: grid;
-      gap: 8px;
-    }
+    .cloudflare-form { display: grid; gap: 12px; }
+    .cloudflare-input-row { display: grid; gap: 8px; }
 
     .cloudflare-input-row span {
       color: #6f5b87;
@@ -87,20 +92,8 @@ function installCloudflareStyles() {
       box-shadow: 0 0 0 4px rgba(174, 125, 255, 0.16);
     }
 
-    .cloudflare-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .cloudflare-toggle {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      color: #4f3d66;
-      font-weight: 800;
-    }
+    .cloudflare-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .cloudflare-toggle { display: flex; gap: 10px; align-items: center; color: #4f3d66; font-weight: 800; }
 
     .cloudflare-sync-list {
       display: grid;
@@ -111,13 +104,7 @@ function installCloudflareStyles() {
       line-height: 1.45;
     }
 
-    .cloudflare-status {
-      min-height: 20px;
-      color: #78658d;
-      font-size: 0.9rem;
-      line-height: 1.4;
-    }
-
+    .cloudflare-status { min-height: 20px; color: #78658d; font-size: 0.9rem; line-height: 1.4; }
     .cloudflare-status[data-tone="success"] { color: #4f8a68; }
     .cloudflare-status[data-tone="error"] { color: #b14568; }
   `;
@@ -140,7 +127,7 @@ function renderCloudflareStoragePanel() {
     <div class="cloudflare-form">
       <div class="cloudflare-input-row">
         <span>Worker URL</span>
-        <input id="cloudflareEndpointInput" type="url" inputmode="url" placeholder="https://lavender-memories.your-name.workers.dev" value="${config.endpoint || ""}" />
+        <input id="cloudflareEndpointInput" type="url" inputmode="url" placeholder="https://photographs.voidkaisa85.workers.dev" value="${config.endpoint || ""}" />
       </div>
       <div class="cloudflare-input-row">
         <span>Sync key</span>
@@ -153,11 +140,12 @@ function renderCloudflareStoragePanel() {
       <div class="cloudflare-actions">
         <button class="primary-button" id="cloudflareSaveButton" type="button">Save storage</button>
         <button class="secondary-button" id="cloudflareSyncButton" type="button">Sync existing memories</button>
+        <button class="secondary-button" id="cloudflareLoadButton" type="button">Load cloud memories</button>
       </div>
       <p class="cloudflare-status" id="cloudflareStatus"></p>
       <div class="cloudflare-sync-list">
         <span>Device and Google Photos imports are compressed first, then uploaded to R2.</span>
-        <span>Demo images from remote URLs are skipped until they are imported as app photos.</span>
+        <span>Use Load cloud memories on another device after saving the same Worker URL and sync key.</span>
       </div>
     </div>
   `;
@@ -170,10 +158,8 @@ function bindCloudflarePanel() {
   const endpointInput = document.getElementById("cloudflareEndpointInput");
   const keyInput = document.getElementById("cloudflareKeyInput");
   const autoInput = document.getElementById("cloudflareAutoSyncInput");
-  const saveButton = document.getElementById("cloudflareSaveButton");
-  const syncButton = document.getElementById("cloudflareSyncButton");
 
-  saveButton?.addEventListener("click", () => {
+  document.getElementById("cloudflareSaveButton")?.addEventListener("click", () => {
     const config = {
       endpoint: cleanCloudflareEndpoint(endpointInput?.value),
       syncKey: String(keyInput?.value || "").trim(),
@@ -184,9 +170,15 @@ function bindCloudflarePanel() {
     if (config.autoSync) scheduleCloudflareAutoSync();
   });
 
-  syncButton?.addEventListener("click", () => {
+  document.getElementById("cloudflareSyncButton")?.addEventListener("click", () => {
     syncCloudflareMedia({ manual: true }).catch((error) => {
       setCloudflareStatus(error instanceof Error ? error.message : "Cloudflare sync failed.", "error");
+    });
+  });
+
+  document.getElementById("cloudflareLoadButton")?.addEventListener("click", () => {
+    loadCloudflareLibrary({ manual: true }).catch((error) => {
+      setCloudflareStatus(error instanceof Error ? error.message : "Could not load Cloudflare memories.", "error");
     });
   });
 }
@@ -203,10 +195,7 @@ function getCloudflareUploadableMedia() {
 async function uploadCloudflareAsset(media, kind, dataUrl, config) {
   const response = await fetch(`${cleanCloudflareEndpoint(config.endpoint)}/media`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(config.syncKey ? { "X-Lavender-Sync-Key": config.syncKey } : {})
-    },
+    headers: cloudflareHeaders(config),
     body: JSON.stringify({
       mediaId: media.id,
       folderId: media.folderId,
@@ -225,42 +214,67 @@ async function uploadCloudflareAsset(media, kind, dataUrl, config) {
 
   const payloadText = await response.text();
   let payload = {};
-  try {
-    payload = payloadText ? JSON.parse(payloadText) : {};
-  } catch {
-    payload = { error: payloadText };
-  }
-
-  if (!response.ok) {
-    throw new Error(payload.error || `Cloudflare upload failed (${response.status}).`);
-  }
-
+  try { payload = payloadText ? JSON.parse(payloadText) : {}; } catch { payload = { error: payloadText }; }
+  if (!response.ok) throw new Error(payload.error || `Cloudflare upload failed (${response.status}).`);
   return payload;
 }
 
-async function uploadMediaToCloudflare(media, config) {
+function portableCloudflareMedia(media, config) {
   const cloudflare = media.metadata?.cloudflare || {};
-  const nextCloudflare = { ...cloudflare };
+  const mainUrl = cloudflare.mainUrl || cloudflareMediaUrl(config, cloudflare.mainKey) || media.uri;
+  const thumbnailUrl = cloudflare.thumbnailUrl || cloudflareMediaUrl(config, cloudflare.thumbnailKey) || media.thumbnailUri || mainUrl;
+
+  return {
+    id: media.id,
+    uri: mainUrl,
+    thumbnailUri: thumbnailUrl,
+    folderId: media.folderId,
+    type: media.type || "image",
+    createdAt: media.createdAt,
+    caption: media.caption || "",
+    captionAuthor: media.captionAuthor,
+    captionEditedAt: media.captionEditedAt,
+    isFavorite: Boolean(media.isFavorite),
+    width: media.width,
+    height: media.height,
+    source: media.source || "cloudflare-r2",
+    metadata: { ...(media.metadata || {}), cloudflare },
+    includedInCarousel: Boolean(media.includedInCarousel),
+    carouselOrder: media.carouselOrder || 0
+  };
+}
+
+async function saveCloudflareLibraryEntry(media, config) {
+  const portable = portableCloudflareMedia(media, config);
+  const response = await fetch(`${cleanCloudflareEndpoint(config.endpoint)}/library/media`, {
+    method: "POST",
+    headers: cloudflareHeaders(config),
+    body: JSON.stringify({ media: portable })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Cloudflare library save failed (${response.status}).`);
+  return payload.media || portable;
+}
+
+async function uploadMediaToCloudflare(media, config) {
+  const nextCloudflare = { ...(media.metadata?.cloudflare || {}) };
 
   if (!nextCloudflare.mainKey && typeof media.uri === "string" && media.uri.startsWith("data:")) {
     const uploaded = await uploadCloudflareAsset(media, "main", media.uri, config);
     nextCloudflare.mainKey = uploaded.key;
-    nextCloudflare.mainUrl = uploaded.url || null;
+    nextCloudflare.mainUrl = uploaded.url || cloudflareMediaUrl(config, uploaded.key);
   }
 
   if (!nextCloudflare.thumbnailKey && typeof media.thumbnailUri === "string" && media.thumbnailUri.startsWith("data:")) {
     const uploaded = await uploadCloudflareAsset(media, "thumbnail", media.thumbnailUri, config);
     nextCloudflare.thumbnailKey = uploaded.key;
-    nextCloudflare.thumbnailUrl = uploaded.url || null;
+    nextCloudflare.thumbnailUrl = uploaded.url || cloudflareMediaUrl(config, uploaded.key);
   }
 
-  media.metadata = {
-    ...(media.metadata || {}),
-    cloudflare: {
-      ...nextCloudflare,
-      uploadedAt: new Date().toISOString()
-    }
-  };
+  media.metadata = { ...(media.metadata || {}), cloudflare: { ...nextCloudflare, uploadedAt: new Date().toISOString() } };
+  if (nextCloudflare.mainUrl) media.uri = nextCloudflare.mainUrl;
+  if (nextCloudflare.thumbnailUrl) media.thumbnailUri = nextCloudflare.thumbnailUrl;
+  await saveCloudflareLibraryEntry(media, config);
 }
 
 async function syncCloudflareMedia({ manual = false } = {}) {
@@ -273,7 +287,7 @@ async function syncCloudflareMedia({ manual = false } = {}) {
   if (cloudflareSyncRunning) return;
   const mediaToUpload = getCloudflareUploadableMedia();
   if (!mediaToUpload.length) {
-    if (manual) setCloudflareStatus("No compressed local memories need Cloudflare sync right now.", "success");
+    if (manual) setCloudflareStatus("No compressed local memories need Cloudflare sync right now. Try Load cloud memories on another device.", "success");
     return;
   }
 
@@ -286,15 +300,74 @@ async function syncCloudflareMedia({ manual = false } = {}) {
       synced += 1;
       setCloudflareStatus(`Synced ${synced} of ${mediaToUpload.length} memories to Cloudflare R2...`);
     }
-    if (cloudflareOriginalCommit) {
-      cloudflareOriginalCommit();
-    } else {
-      commit();
-    }
+    if (cloudflareOriginalCommit) cloudflareOriginalCommit();
+    else commit();
     setCloudflareStatus(`Cloudflare sync complete. ${synced} ${synced === 1 ? "memory" : "memories"} uploaded.`, "success");
   } finally {
     cloudflareSyncRunning = false;
   }
+}
+
+function normalizeCloudflareMedia(media) {
+  const folderExists = state.folders.some((folder) => folder.id === media.folderId);
+  return {
+    id: media.id,
+    uri: media.uri,
+    thumbnailUri: media.thumbnailUri || media.uri,
+    folderId: folderExists ? media.folderId : state.folders[0]?.id,
+    type: media.type || "image",
+    createdAt: media.createdAt || new Date().toISOString(),
+    caption: media.caption || "",
+    captionAuthor: media.captionAuthor,
+    captionEditedAt: media.captionEditedAt,
+    isFavorite: Boolean(media.isFavorite),
+    width: media.width || 1400,
+    height: media.height || 1800,
+    source: media.source || "cloudflare-r2",
+    metadata: media.metadata || {},
+    includedInCarousel: Boolean(media.includedInCarousel),
+    carouselOrder: media.carouselOrder || 0
+  };
+}
+
+async function loadCloudflareLibrary({ manual = false } = {}) {
+  const config = getCloudflareConfig();
+  if (!cleanCloudflareEndpoint(config.endpoint)) {
+    if (manual) setCloudflareStatus("Add and save your Cloudflare Worker URL first.", "error");
+    return;
+  }
+
+  setCloudflareStatus("Loading Cloudflare memories...");
+  const response = await fetch(`${cleanCloudflareEndpoint(config.endpoint)}/library`, {
+    method: "GET",
+    headers: config.syncKey ? { "X-Lavender-Sync-Key": config.syncKey } : {}
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Could not load Cloudflare library (${response.status}).`);
+
+  const remoteMedia = (payload.media || []).map(normalizeCloudflareMedia);
+  let added = 0;
+  let updated = 0;
+
+  for (const remote of remoteMedia) {
+    const index = state.media.findIndex((item) => item.id === remote.id);
+    if (index >= 0) {
+      state.media[index] = { ...state.media[index], ...remote, metadata: { ...(state.media[index].metadata || {}), ...(remote.metadata || {}) } };
+      updated += 1;
+    } else {
+      state.media.unshift(remote);
+      added += 1;
+    }
+  }
+
+  const selectedIds = new Set(state.settings.selectedMediaIds || []);
+  remoteMedia.forEach((media) => { if (media.includedInCarousel) selectedIds.add(media.id); });
+  state.settings.selectedMediaIds = [...selectedIds].filter((id) => state.media.some((media) => media.id === id));
+  state.media = syncCarouselFlags(state.media, state.settings.selectedMediaIds);
+
+  if (cloudflareOriginalCommit) cloudflareOriginalCommit();
+  else commit();
+  setCloudflareStatus(`Loaded ${remoteMedia.length} cloud memories. ${added} added, ${updated} updated.`, "success");
 }
 
 function scheduleCloudflareAutoSync() {
