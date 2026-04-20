@@ -195,13 +195,13 @@
           <div class="import-card">
             <div>
               <strong>Google Photos</strong>
-              <p>Mock OAuth, albums, media mapping, and imports are wired.</p>
+              <p>Pick photos from Google Photos, then compress them into this app.</p>
             </div>
-            <button class="secondary-button" id="connectGoogle" type="button">Connect mock</button>
+            <button class="secondary-button" id="connectGoogle" type="button">Import from Google Photos</button>
           </div>
           <div id="googleAlbums" class="album-row"></div>
           <div id="googleMediaGrid" class="select-grid"></div>
-          <button class="primary-button full" id="importGoogleSelected" type="button">Import selected</button>
+          <button class="primary-button full" id="importGoogleSelected" type="button" hidden>Import selected</button>
         </section>
         <p class="status-line" id="importStatus"></p>
       </div>
@@ -244,5 +244,6 @@
     </dialog>
 
     <script src="./web/app.js"></script>
+    <script src="./web/google-photos-picker.js"></script>
   </body>
 </html>
