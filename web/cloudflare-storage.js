@@ -26,10 +26,18 @@ function cleanCloudflareEndpoint(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
-function cloudflareHeaders(config) {
+function cloudflareUrl(config, path) {
+  const endpoint = cleanCloudflareEndpoint(config.endpoint);
+  const url = new URL(`${endpoint}${path}`);
+  if (config.syncKey) url.searchParams.set("syncKey", config.syncKey);
+  return url.toString();
+}
+
+function cloudflarePostOptions(payload) {
   return {
-    "Content-Type": "application/json",
-    ...(config.syncKey ? { "X-Lavender-Sync-Key": config.syncKey } : {})
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    body: JSON.stringify(payload)
   };
 }
 
@@ -193,24 +201,20 @@ function getCloudflareUploadableMedia() {
 }
 
 async function uploadCloudflareAsset(media, kind, dataUrl, config) {
-  const response = await fetch(`${cleanCloudflareEndpoint(config.endpoint)}/media`, {
-    method: "POST",
-    headers: cloudflareHeaders(config),
-    body: JSON.stringify({
-      mediaId: media.id,
-      folderId: media.folderId,
-      kind,
-      contentType: "image/jpeg",
-      dataUrl,
-      metadata: {
-        source: media.source,
-        captionAuthor: media.captionAuthor || "",
-        createdAt: media.createdAt,
-        width: media.width,
-        height: media.height
-      }
-    })
-  });
+  const response = await fetch(cloudflareUrl(config, "/media"), cloudflarePostOptions({
+    mediaId: media.id,
+    folderId: media.folderId,
+    kind,
+    contentType: "image/jpeg",
+    dataUrl,
+    metadata: {
+      source: media.source,
+      captionAuthor: media.captionAuthor || "",
+      createdAt: media.createdAt,
+      width: media.width,
+      height: media.height
+    }
+  }));
 
   const payloadText = await response.text();
   let payload = {};
@@ -246,11 +250,7 @@ function portableCloudflareMedia(media, config) {
 
 async function saveCloudflareLibraryEntry(media, config) {
   const portable = portableCloudflareMedia(media, config);
-  const response = await fetch(`${cleanCloudflareEndpoint(config.endpoint)}/library/media`, {
-    method: "POST",
-    headers: cloudflareHeaders(config),
-    body: JSON.stringify({ media: portable })
-  });
+  const response = await fetch(cloudflareUrl(config, "/library/media"), cloudflarePostOptions({ media: portable }));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Cloudflare library save failed (${response.status}).`);
   return payload.media || portable;
@@ -338,10 +338,7 @@ async function loadCloudflareLibrary({ manual = false } = {}) {
   }
 
   setCloudflareStatus("Loading Cloudflare memories...");
-  const response = await fetch(`${cleanCloudflareEndpoint(config.endpoint)}/library`, {
-    method: "GET",
-    headers: config.syncKey ? { "X-Lavender-Sync-Key": config.syncKey } : {}
-  });
+  const response = await fetch(cloudflareUrl(config, "/library"), { method: "GET" });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Could not load Cloudflare library (${response.status}).`);
 
