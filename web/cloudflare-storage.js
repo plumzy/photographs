@@ -112,7 +112,7 @@ function installCloudflareStyles() {
       line-height: 1.45;
     }
 
-    .cloudflare-status { min-height: 20px; color: #78658d; font-size: 0.9rem; line-height: 1.4; }
+    .cloudflare-status { min-height: 20px; white-space: pre-wrap; color: #78658d; font-size: 0.9rem; line-height: 1.4; }
     .cloudflare-status[data-tone="success"] { color: #4f8a68; }
     .cloudflare-status[data-tone="error"] { color: #b14568; }
   `;
@@ -147,6 +147,7 @@ function renderCloudflareStoragePanel() {
       </label>
       <div class="cloudflare-actions">
         <button class="primary-button" id="cloudflareSaveButton" type="button">Save storage</button>
+        <button class="secondary-button" id="cloudflareTestButton" type="button">Test connection</button>
         <button class="secondary-button" id="cloudflareSyncButton" type="button">Sync existing memories</button>
         <button class="secondary-button" id="cloudflareLoadButton" type="button">Load cloud memories</button>
       </div>
@@ -162,20 +163,26 @@ function renderCloudflareStoragePanel() {
   bindCloudflarePanel();
 }
 
-function bindCloudflarePanel() {
-  const endpointInput = document.getElementById("cloudflareEndpointInput");
-  const keyInput = document.getElementById("cloudflareKeyInput");
-  const autoInput = document.getElementById("cloudflareAutoSyncInput");
+function currentCloudflareFormConfig() {
+  return {
+    endpoint: cleanCloudflareEndpoint(document.getElementById("cloudflareEndpointInput")?.value),
+    syncKey: String(document.getElementById("cloudflareKeyInput")?.value || "").trim(),
+    autoSync: Boolean(document.getElementById("cloudflareAutoSyncInput")?.checked)
+  };
+}
 
+function bindCloudflarePanel() {
   document.getElementById("cloudflareSaveButton")?.addEventListener("click", () => {
-    const config = {
-      endpoint: cleanCloudflareEndpoint(endpointInput?.value),
-      syncKey: String(keyInput?.value || "").trim(),
-      autoSync: Boolean(autoInput?.checked)
-    };
+    const config = currentCloudflareFormConfig();
     saveCloudflareConfig(config);
     setCloudflareStatus(config.endpoint ? "Cloudflare storage settings saved." : "Add your Worker URL to enable R2 sync.", config.endpoint ? "success" : "");
     if (config.autoSync) scheduleCloudflareAutoSync();
+  });
+
+  document.getElementById("cloudflareTestButton")?.addEventListener("click", () => {
+    testCloudflareConnection().catch((error) => {
+      setCloudflareStatus(error instanceof Error ? error.message : "Connection test failed.", "error");
+    });
   });
 
   document.getElementById("cloudflareSyncButton")?.addEventListener("click", () => {
@@ -189,6 +196,36 @@ function bindCloudflarePanel() {
       setCloudflareStatus(error instanceof Error ? error.message : "Could not load Cloudflare memories.", "error");
     });
   });
+}
+
+async function readDiagnosticResponse(url) {
+  const started = performance.now();
+  const response = await fetch(url, { method: "GET" });
+  const text = await response.text();
+  return `${response.status} ${response.statusText} (${Math.round(performance.now() - started)}ms) ${text.slice(0, 220)}`;
+}
+
+async function testCloudflareConnection() {
+  const config = currentCloudflareFormConfig();
+  if (!cleanCloudflareEndpoint(config.endpoint)) {
+    setCloudflareStatus("Add your Worker URL first.", "error");
+    return;
+  }
+  saveCloudflareConfig(config);
+  setCloudflareStatus("Testing Cloudflare connection...");
+  const results = [];
+  for (const [label, url] of [
+    ["health", `${cleanCloudflareEndpoint(config.endpoint)}/health`],
+    ["cors-test", `${cleanCloudflareEndpoint(config.endpoint)}/cors-test`],
+    ["library", cloudflareUrl(config, "/library")]
+  ]) {
+    try {
+      results.push(`${label}: ${await readDiagnosticResponse(url)}`);
+    } catch (error) {
+      results.push(`${label}: ${error instanceof Error ? error.message : "failed"}`);
+    }
+  }
+  setCloudflareStatus(results.join("\n"), results.every((line) => line.includes("200 ")) ? "success" : "error");
 }
 
 function getCloudflareUploadableMedia() {
