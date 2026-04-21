@@ -194,6 +194,7 @@ export default {
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (url.pathname === "/health" && request.method === "GET") return jsonResponse({ ok: true, service: "lavender-memories-r2" }, 200, cors);
+    if (url.pathname === "/cors-test" && request.method === "GET") return jsonResponse({ ok: true, cors: true, origin: request.headers.get("Origin") || "none" }, 200, cors);
     if (url.pathname === "/media" && request.method === "POST") return handleMediaUpload(request, env, cors);
     if (url.pathname === "/library/media" && request.method === "POST") return handleLibraryUpsert(request, env, cors);
     if (url.pathname === "/library" && request.method === "GET") return handleLibraryRead(request, env, cors);
