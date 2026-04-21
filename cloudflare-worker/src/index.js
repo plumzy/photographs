@@ -1,10 +1,6 @@
-function corsHeaders(request, env) {
-  const origin = request.headers.get("Origin") || "";
-  const allowedOrigin = env.ALLOWED_ORIGIN || "https://plumzy.github.io";
-  const allowOrigin = origin && origin === allowedOrigin ? origin : allowedOrigin;
-
+function corsHeaders() {
   return {
-    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,X-Lavender-Sync-Key",
     "Access-Control-Max-Age": "86400"
@@ -183,7 +179,7 @@ async function handleMediaRead(request, env, cors) {
 
 export default {
   async fetch(request, env) {
-    const cors = corsHeaders(request, env);
+    const cors = corsHeaders();
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
