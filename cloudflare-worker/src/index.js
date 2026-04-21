@@ -17,9 +17,19 @@ function jsonResponse(body, status, headers) {
   });
 }
 
+function requestSyncKey(request) {
+  const url = new URL(request.url);
+  return request.headers.get("X-Lavender-Sync-Key") || url.searchParams.get("syncKey") || "";
+}
+
 function requireSyncKey(request, env) {
   if (!env.SYNC_KEY) return true;
-  return request.headers.get("X-Lavender-Sync-Key") === env.SYNC_KEY;
+  return requestSyncKey(request) === env.SYNC_KEY;
+}
+
+async function readJsonBody(request) {
+  const text = await request.text();
+  return text ? JSON.parse(text) : {};
 }
 
 function safeSegment(value) {
@@ -74,7 +84,7 @@ async function handleMediaUpload(request, env, cors) {
   if (!env.MEMORIES_BUCKET) return jsonResponse({ error: "Missing MEMORIES_BUCKET R2 binding." }, 500, cors);
   if (!requireSyncKey(request, env)) return jsonResponse({ error: "Unauthorized Cloudflare sync key." }, 401, cors);
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const { mediaId, folderId, kind, dataUrl, metadata = {} } = body;
 
   if (!mediaId || !folderId || !kind || !dataUrl) {
@@ -112,7 +122,7 @@ async function handleLibraryUpsert(request, env, cors) {
   if (!env.MEMORIES_BUCKET) return jsonResponse({ error: "Missing MEMORIES_BUCKET R2 binding." }, 500, cors);
   if (!requireSyncKey(request, env)) return jsonResponse({ error: "Unauthorized Cloudflare sync key." }, 401, cors);
 
-  const body = await request.json();
+  const body = await readJsonBody(request);
   const media = portableMediaFromBody(body.media || {});
 
   if (!media.id || !media.folderId || !media.uri) {
